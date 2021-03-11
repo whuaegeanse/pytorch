@@ -62,6 +62,9 @@ CONFIG_TREE_DATA = [
     ("bionic", [
         ("clang", [
             ("9", [
+                ("3.6", [
+                    ("noarch", [XImportant(True)]),
+                ]),
                 XImportant("3.6"),
             ]),
             ("9", [
@@ -160,6 +163,7 @@ class ExperimentalFeatureConfigNode(TreeConfigNode):
             "mlc": MLCConfigNode,
             "vulkan": VulkanConfigNode,
             "parallel_tbb": ParallelTBBConfigNode,
+            "noarch": NoarchConfigNode,
             "parallel_native": ParallelNativeConfigNode,
             "onnx": ONNXConfigNode,
             "libtorch": LibTorchConfigNode,
@@ -244,6 +248,14 @@ class ParallelTBBConfigNode(TreeConfigNode):
 
     def init2(self, node_name):
         self.props["parallel_backend"] = "paralleltbb"
+
+    def child_constructor(self):
+        return ImportantConfigNode
+
+
+class NoarchConfigNode(TreeConfigNode):
+    def init2(self, node_name):
+        self.props["is_noarch"] = node_name
 
     def child_constructor(self):
         return ImportantConfigNode
