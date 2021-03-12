@@ -4,6 +4,7 @@
 #include <torch/csrc/autograd/edge.h>
 #include <torch/csrc/autograd/engine.h>
 #include <torch/csrc/autograd/function.h>
+#include <torch/csrc/autograd/InferenceMode.h>
 #include <torch/csrc/autograd/functions/accumulate_grad.h>
 #include <torch/csrc/autograd/functions/tensor.h>
 #include <torch/csrc/autograd/generated/Functions.h>
@@ -34,7 +35,7 @@ DifferentiableViewMeta::DifferentiableViewMeta(at::TensorImpl* self_impl,
     : AutogradMeta(self_impl),
       backward_info_(std::move(backward_info)),
       forward_info_(std::move(forward_info)),
-      creation_meta(creation_meta) {
+      creation_meta(InferenceMode::is_enabled() ? CreationMeta::NO_VARIABLE_TYPE_VIEW : creation_meta) {
   is_view_ = true;
   if (backward_info_.has_value()) {
     self_impl->set_version_counter(impl::version_counter(backward_info_.value().base_));
@@ -535,6 +536,8 @@ void handle_view_on_rebase(DifferentiableViewMeta* diff_view_meta, bool indirect
                        "version of the function that produced this view or "
                        "don't modify this view inplace.");
       } else {
+        TORCH_INTERNAL_ASSERT(creation_meta != CreationMeta::NO_VARIABLE_TYPE_VIEW,
+            "CreationMeta::NO_VARIABLE_TYPE_VIEW tensor shouldn't participate in autograd");
         TORCH_INTERNAL_ASSERT(false, "Invalid CreationMeta state");
       }
 
