@@ -1071,7 +1071,13 @@ Arguments:
   // base ProcessGroup::Options binding
   auto processGroupOptions =
       intrusive_ptr_class_<::c10d::ProcessGroup::Options>(
-          module, "ProcessGroupOptions")
+          module,
+          "ProcessGroupOptions",
+          R"(
+Base class for all processs group options implementations, such as the 2 provided by PyTorch
+distributed: (:class:`~torch.distributed.ProcessGroupGloo.Options` and
+:class:`~torch.distributed.ProcessGroupNCCL.Options`).
+)")
           .def_readonly("backend", &::c10d::ProcessGroup::Options::backend)
           .def_readwrite("timeout", &::c10d::ProcessGroup::Options::timeout);
 
@@ -1098,27 +1104,54 @@ Arguments:
   shared_ptr_class_<::gloo::transport::Device>(processGroupGloo, "Device");
 
   intrusive_ptr_class_<::c10d::ProcessGroupGloo::Options>(
-      processGroupGloo, "Options", processGroupOptions)
-      .def(py::init<>())
+      processGroupGloo,
+      "Options",
+      processGroupOptions,
+      R"(
+ProcessGroup options for Gloo backend
+
+Arguments:
+    timeout (timedelta, optional): Timeout for operations executed against
+            the process group. Default value equals 30 minutes.
+
+Example::
+    >>> import torch.distributed as dist
+    >>> import tempfile
+    >>> from datetime import timedelta
+    >>>
+    >>> temp_name = tempfile.NamedTemporaryFile(delete=False).name
+    >>> gloo_options = dist.ProcessGroupGloo.Options(timeout=timedelta(seconds=300))
+    >>> # initialize a gloo process group with the options just created
+    >>> dist.init_process_group("gloo", init_method=f"file://{temp_name}",
+    >>>                          world_size=2, rank=0, pg_options=gloo_options)
+      )")
+      .def(
+          py::init<std::chrono::milliseconds>(),
+          py::arg("timeout") = kProcessGroupDefaultTimeout)
       .def_readwrite("devices", &::c10d::ProcessGroupGloo::Options::devices)
-      .def_readwrite("timeout", &::c10d::ProcessGroupGloo::Options::timeout)
       .def_readwrite("threads", &::c10d::ProcessGroupGloo::Options::threads);
 
-  processGroupGloo.def_static(
-      "create_device",
-      [](const std::string& hostname, const std::string& interface)
-          -> std::shared_ptr<::gloo::transport::Device> {
-        if (!hostname.empty()) {
-          return ::c10d::ProcessGroupGloo::createDeviceForHostname(hostname);
-        }
-        if (!interface.empty()) {
-          return ::c10d::ProcessGroupGloo::createDeviceForInterface(interface);
-        }
-        throw std::invalid_argument(
-            "Specify either `hostname` or `interface` argument.");
-      },
-      py::arg("hostname") = "",
-      py::arg("interface") = "");
+  processGroupGloo
+      .def_static(
+          "create_device",
+          [](const std::string& hostname, const std::string& interface)
+              -> std::shared_ptr<::gloo::transport::Device> {
+            if (!hostname.empty()) {
+              return ::c10d::ProcessGroupGloo::createDeviceForHostname(
+                  hostname);
+            }
+            if (!interface.empty()) {
+              return ::c10d::ProcessGroupGloo::createDeviceForInterface(
+                  interface);
+            }
+            throw std::invalid_argument(
+                "Specify either `hostname` or `interface` argument.");
+          },
+          py::arg("hostname") = "",
+          py::arg("interface") = "")
+      .def_static(
+          "create_default_device",
+          &::c10d::ProcessGroupGloo::createDefaultDevice);
 
   processGroupGloo
       .def(
@@ -1158,7 +1191,7 @@ Arguments:
           py::arg("store"),
           py::arg("rank"),
           py::arg("size"),
-          py::arg("timeout") = std::chrono::milliseconds(10 * 1000), // NOLINT
+          py::arg("timeout") = kProcessGroupDefaultTimeout, // NOLINT
           py::call_guard<py::gil_scoped_release>());
 #endif
 
@@ -1191,12 +1224,41 @@ Arguments:
               py::call_guard<py::gil_scoped_release>());
 
   intrusive_ptr_class_<::c10d::ProcessGroupNCCL::Options>(
-      processGroupNCCL, "Options")
-      .def(py::init<>())
+      processGroupNCCL,
+      "Options",
+      processGroupOptions,
+      R"(
+ProcessGroup options for the NCCL backend
+
+Arguments:
+    timeout (timedelta, optional): Timeout for operations executed against
+            the process group. Default value equals 30 minutes. This is
+            applicable only if the environment variable ``NCCL_BLOCKING_WAIT``
+            or ``NCCL_ASYNC_ERROR_HANDLING`` is set to 1. When
+            ``NCCL_BLOCKING_WAIT`` is set, this is the duration for which the
+            process will block and wait for collectives to complete before
+            throwing an exception. When ``NCCL_ASYNC_ERROR_HANDLING`` is set,
+            this is the duration after which collectives will be aborted
+            asynchronously and the process will crash. `
+    is_high_priority_stream (bool, optional): flag to enable/disable process
+            group to pick up high priority cuda streams. It lets CUDA driver
+            to prioritize NCCL kernels when there are compute kernels waiting.
+
+Example::
+    >>> import torch.distributed as dist
+    >>> from datetime import timedelta
+    >>>
+    >>> nccl_options = dist.ProcessGroupNCCL.Options(timeout=timedelta(seconds=300))
+    >>> # initialize a nccl process group with the options just created
+    >>> dist.init_process_group("nccl", pg_options=nccl_options)
+      )")
+      .def(
+          py::init<std::chrono::milliseconds, bool>(),
+          py::arg("timeout") = kProcessGroupDefaultTimeout,
+          py::arg("is_high_priority_stream") = false)
       .def_readwrite(
-          "is_high_priority",
-          &::c10d::ProcessGroupNCCL::Options::is_high_priority_stream)
-      .def_readwrite("op_timeout", &::c10d::ProcessGroupNCCL::Options::timeout);
+          "is_high_priority_stream",
+          &::c10d::ProcessGroupNCCL::Options::is_high_priority_stream);
   processGroupNCCL.def_static(
       "_group_start", []() { ::c10d::ProcessGroupNCCL::groupStart(); });
   processGroupNCCL.def_static(
